@@ -1,0 +1,4 @@
+{
+  "framework": null,
+  "functions": { "api/picks.js": { "maxDuration": 60 } }
+}
