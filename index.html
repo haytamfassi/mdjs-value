@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MDJS Value Picks</title>
+<style>
+:root{--bg:#f6f7f4;--card:#fff;--ink:#17201b;--mute:#5d6b62;--line:#dde3dc;--acc:#0b6b3a;--pos:#0b6b3a;--neg:#b3261e;--warn:#9a6700}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1511;--card:#18211b;--ink:#e8efe9;--mute:#9bab9f;--line:#2a372e;--acc:#4cc27f;--pos:#4cc27f;--neg:#ff8a80;--warn:#e3b341}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Georgia,'Times New Roman',serif}
+.w{max-width:1100px;margin:0 auto;padding:12px;padding-bottom:40px}
+h1{font-size:1.5rem;margin:8px 0 2px}h2{font-size:1.1rem;margin:20px 0 8px}
+.sub,.note{color:var(--mute);font-size:.85rem}.note{border-left:3px solid var(--warn);padding:4px 10px;margin:10px 0}
+.bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+label{display:flex;flex-direction:column;font-size:.75rem;color:var(--mute);gap:2px}
+input,select,button{font:inherit;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);min-width:0}
+button{background:var(--acc);color:var(--bg);border-color:var(--acc);cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.sl{display:grid;gap:8px}.pick{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:6px;padding:10px}
+.pick b{display:block}.row{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.85rem;margin-top:4px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.High{color:var(--neg)}.Medium{color:var(--warn)}.Low{color:var(--pos)}
+table{width:100%;border-collapse:collapse}thead{display:none}
+tr{display:block;background:var(--card);border:1px solid var(--line);border-radius:6px;margin-bottom:8px;padding:8px}
+td{display:flex;justify-content:space-between;gap:12px;padding:2px 0;font-size:.88rem}
+td::before{content:attr(data-l);color:var(--mute);font-size:.75rem;flex:none}
+td.why{display:block;color:var(--mute);font-size:.8rem}td.why::before{content:''}
+#msg{padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--card)}#msg.err{border-color:var(--neg);color:var(--neg)}
+@media(min-width:760px){.bar{grid-template-columns:repeat(4,1fr)}.sl{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+thead{display:table-header-group}th{text-align:left;font-size:.75rem;color:var(--mute);padding:6px;border-bottom:2px solid var(--line)}
+tr{display:table-row;border:0;border-radius:0;margin:0;padding:0;background:none}td{display:table-cell;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+td::before{content:none}td.why{display:table-cell;max-width:260px}}
+</style></head><body><div class="w">
+<h1>MDJS Value Picks</h1>
+<div class="sub">Model-based value bets, kickoff times in Morocco (Africa/Casablanca)</div>
+<div class="note">Probabilities are statistical estimates, not guarantees; any bet can lose. Odds come from bookmakers via API-Football, not from MDJS: always check the price on your MDJS slip before playing. 18+ only, bet within your means.</div>
+<div class="bar">
+<label>Date<input type="date" id="date"></label>
+<label>League<select id="lg"><option value="">All</option></select></label>
+<label>Market<select id="mk"><option value="">All</option></select></label>
+<label>Sort<select id="so"><option value="score">Best value/risk</option><option value="ev">EV</option><option value="pAI">Probability</option><option value="time">Kickoff</option></select></label>
+<label>Min odds<input type="number" id="o1" step=".1" value="1.5"></label>
+<label>Max odds<input type="number" id="o2" step=".1" value="15"></label>
+<label>Kickoff from<input type="time" id="t1"></label>
+<label>Kickoff to<input type="time" id="t2"></label>
+<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="pv" checked>Positive EV only</label>
+<button id="go" style="grid-column:span 1">Load picks</button>
+</div>
+<div id="msg" hidden></div>
+<h2>Daily shortlist (max 5)</h2><div class="sl" id="sl"></div>
+<h2>All picks</h2>
+<table><thead><tr><th>Time<th>Match<th>Pick<th>Odds<th>Implied<th>AI prob.<th>EV<th>Conf.<th>Risk<th>Reasoning</thead><tbody id="tb"></tbody></table>
+</div>
+<script>
+const $=s=>document.querySelector(s);let D=null;
+const T=new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Casablanca'});
+const t=i=>T.format(new Date(i)),pc=x=>(x*100).toFixed(1)+'%';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('#date').value=new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Casablanca'});
+function msg(s,err){const m=$('#msg');m.hidden=!s;m.className=err?'err':'';m.textContent=s||''}
+async function load(){
+  msg('Loading real fixtures and odds…');$('#go').disabled=true;
+  try{
+    const r=await fetch('/api/picks?date='+$('#date').value),j=await r.json();
+    if(!r.ok)throw new Error(j.error||'Request failed');
+    D=j;fill('#lg',[...new Map(j.picks.map(p=>[p.leagueId,p.league]))]);
+    fill('#mk',[...new Map(j.picks.map(p=>[p.mk,p.market]))]);
+    const w=j.warnings.length?' Warnings: '+j.warnings.join(' | '):'';
+    msg(`${j.matches} matches found, ${j.matches-j.skipped} analysed, ${j.skipped} skipped (no odds or too little league data).`+w,false);
+    if(!j.matches)msg('No upcoming matches in your selected leagues on this date.');
+  }catch(e){D=null;msg('Could not load picks: '+e.message,true)}
+  $('#go').disabled=false;render();
+}
+function fill(sel,entries){const e=$(sel),v=e.value;e.length=1;entries.forEach(([k,n])=>e.add(new Option(n,k)));e.value=v}
+function card(p){return `<div class="pick"><b>${esc(p.sel)} @ ${p.odd.toFixed(2)}</b><span class="sub">${esc(p.home)} vs ${esc(p.away)} · ${t(p.kickoff)} · ${esc(p.league)}</span>
+<div class="row"><span>AI ${pc(p.pAI)} vs implied ${pc(p.implied)}</span><span class="${p.ev>0?'pos':'neg'}">EV ${(p.ev*100).toFixed(1)}%</span><span>Conf. ${p.conf}%</span><span class="${p.risk}">${p.risk} risk</span><span>${esc(p.bookmaker)}</span></div></div>`}
+function render(){
+  if(!D){$('#sl').innerHTML='';$('#tb').innerHTML='';return}
+  $('#sl').innerHTML=D.shortlist.length?D.shortlist.map(card).join('')+(D.shortlist.length<5?`<div class="sub">Only ${D.shortlist.length} pick(s) passed the quality filters (EV ≥ 5%, confidence ≥ 40%).</div>`:''):'<div class="sub">No pick passed the quality filters today. Skipping a day is a valid decision.</div>';
+  const lg=$('#lg').value,mk=$('#mk').value,a=+$('#o1').value||0,b=+$('#o2').value||1e9,f=$('#t1').value,g=$('#t2').value,pv=$('#pv').checked,so=$('#so').value;
+  const rows=D.picks.filter(p=>(!lg||p.leagueId==lg)&&(!mk||p.mk==mk)&&p.odd>=a&&p.odd<=b&&(!f||t(p.kickoff)>=f)&&(!g||t(p.kickoff)<=g)&&(!pv||p.ev>0));
+  rows.sort((x,y)=>so==='time'?x.kickoff.localeCompare(y.kickoff):y[so]-x[so]);
+  $('#tb').innerHTML=rows.map(p=>`<tr><td data-l="Time">${t(p.kickoff)}<td data-l="Match">${esc(p.home)} vs ${esc(p.away)}<br><span class="sub">${esc(p.league)}</span><td data-l="Pick"><b>${esc(p.sel)}</b><br><span class="sub">${esc(p.market)}</span><td data-l="Odds">${p.odd.toFixed(2)}<td data-l="Implied">${pc(p.implied)}<td data-l="AI prob.">${pc(p.pAI)}<td data-l="EV" class="${p.ev>0?'pos':'neg'}">${(p.ev*100).toFixed(1)}%<td data-l="Confidence">${p.conf}%<td data-l="Risk" class="${p.risk}">${p.risk}<td class="why">${esc(p.why)}`).join('')||'<tr><td>No picks match these filters.</tr>';
+}
+$('#go').onclick=load;['lg','mk','so','o1','o2','t1','t2','pv'].forEach(i=>$('#'+i).addEventListener('input',render));
+load();
+</script></body></html>
